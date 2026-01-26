@@ -30,6 +30,16 @@ export const sanitizeMoney = (value: string) => {
   return normalized;
 };
 
+export const formatCurrencyInput = (value: string) => {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const numberValue = Number(digits) / 100;
+  return numberValue.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+};
+
 export const sanitizeText = (value: string) =>
   value.replace(/[^\p{L}\s]/gu, "").replace(/\s{2,}/g, " ");
 

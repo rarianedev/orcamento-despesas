@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateTotals,
   isValidDate,
+  parseDateToNumber,
   sanitizeDate,
   sanitizeMoney,
   sanitizeText,
@@ -30,6 +31,12 @@ describe("finance utils", () => {
     expect(isValidDate("32/13/9999")).toBe(false);
     expect(isValidDate("29/02/2023")).toBe(false);
     expect(isValidDate("29/02/2024")).toBe(true);
+  });
+
+  it("parseDateToNumber normalizes dates for sorting", () => {
+    expect(parseDateToNumber("01/01/2024")).toBe(20240101);
+    expect(parseDateToNumber("31/12/2025")).toBe(20251231);
+    expect(parseDateToNumber("31/02/2024")).toBeNull();
   });
 
   it("calculateTotals respects paid and cofrinho logic", () => {

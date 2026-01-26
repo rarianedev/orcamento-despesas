@@ -1,18 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   calculateTotals,
+  formatCurrencyInput,
   isValidDate,
   parseDateToNumber,
   sanitizeDate,
-  sanitizeMoney,
   sanitizeText,
+  toNumber,
   type Payment,
 } from "../lib/finance";
 
+type SortOrder =
+  | "vencimento-asc"
+  | "vencimento-desc"
+  | "valor-asc"
+  | "valor-desc"
+  | "status-abertos"
+  | "status-pagos"
+  | "nenhum";
+
 export default function FinanceClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const valorFixoId = useId();
+  const destinadoId = useId();
+  const statusFilterId = useId();
+  const sortOrderId = useId();
+  const importErrorId = useId();
   const [valorFixo, setValorFixo] = useState("");
   const [destinado, setDestinado] = useState("");
   const [pagamentos, setPagamentos] = useState<Payment[]>([
@@ -20,12 +36,9 @@ export default function FinanceClient() {
     { id: "p-2", descricao: "", valor: "", vencimento: "", pago: false },
     { id: "p-3", descricao: "", valor: "", vencimento: "", pago: false },
   ]);
-  const [statusFilter, setStatusFilter] = useState<"todos" | "abertos" | "pagos">(
-    "todos"
-  );
-  const [sortOrder, setSortOrder] = useState<"vencimento-asc" | "vencimento-desc" | "nenhum">(
-    "vencimento-asc"
-  );
+  const [statusFilter, setStatusFilter] = useState<"todos" | "abertos" | "pagos">("todos");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("vencimento-asc");
+  const [importError, setImportError] = useState<string | null>(null);
 
   const storageKey = "finance-state-v1";
 
@@ -52,6 +65,93 @@ export default function FinanceClient() {
     [valorFixo, destinado, pagamentos]
   );
 
+  const normalizeMoneyValue = (value: unknown) => {
+    if (typeof value === "number") {
+      return formatBRL(value);
+    }
+    if (typeof value === "string") {
+      return formatCurrencyInput(value);
+    }
+    return "";
+  };
+
+  const normalizeTextValue = (value: unknown) =>
+    typeof value === "string" ? sanitizeText(value) : "";
+
+  const normalizeDateValue = (value: unknown) =>
+    typeof value === "string" ? sanitizeDate(value) : "";
+
+  const normalizePayment = (value: unknown): Payment | null => {
+    if (!value || typeof value !== "object") return null;
+    const record = value as Partial<Payment>;
+
+    return {
+      id: typeof record.id === "string" && record.id.trim() ? record.id : createPayment().id,
+      descricao: normalizeTextValue(record.descricao),
+      valor: normalizeMoneyValue(record.valor),
+      vencimento: normalizeDateValue(record.vencimento),
+      pago: Boolean(record.pago),
+    };
+  };
+
+  const normalizeState = (value: unknown) => {
+    if (!value || typeof value !== "object") return null;
+    const record = value as Partial<{
+      valorFixo: unknown;
+      destinado: unknown;
+      pagamentos: unknown;
+      statusFilter: unknown;
+      sortOrder: unknown;
+    }>;
+
+    const nextValorFixo = normalizeMoneyValue(record.valorFixo);
+    const nextDestinado = normalizeMoneyValue(record.destinado);
+
+    if (
+      typeof record.statusFilter === "string" &&
+      !["todos", "abertos", "pagos"].includes(record.statusFilter)
+    ) {
+      return null;
+    }
+
+    if (
+      typeof record.sortOrder === "string" &&
+      ![
+        "vencimento-asc",
+        "vencimento-desc",
+        "valor-asc",
+        "valor-desc",
+        "status-abertos",
+        "status-pagos",
+        "nenhum",
+      ].includes(record.sortOrder)
+    ) {
+      return null;
+    }
+
+    if (record.pagamentos !== undefined && !Array.isArray(record.pagamentos)) {
+      return null;
+    }
+
+    const nextPagamentos =
+      Array.isArray(record.pagamentos) && record.pagamentos.length
+        ? record.pagamentos
+            .map((item) => normalizePayment(item))
+            .filter((item): item is Payment => Boolean(item))
+        : null;
+
+    return {
+      valorFixo: nextValorFixo,
+      destinado: nextDestinado,
+      pagamentos: nextPagamentos,
+      statusFilter:
+        typeof record.statusFilter === "string"
+          ? (record.statusFilter as "todos" | "abertos" | "pagos")
+          : null,
+      sortOrder: typeof record.sortOrder === "string" ? (record.sortOrder as SortOrder) : null,
+    };
+  };
+
   const handlePagamentoChange = (
     id: string,
     field: "descricao" | "valor" | "vencimento" | "pago",
@@ -61,7 +161,7 @@ export default function FinanceClient() {
       field === "descricao"
         ? sanitizeText(value as string)
         : field === "valor"
-        ? sanitizeMoney(value as string)
+        ? formatCurrencyInput(value as string)
         : field === "vencimento"
         ? sanitizeDate(value as string)
         : value;
@@ -79,12 +179,6 @@ export default function FinanceClient() {
     setPagamentos((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleDateBlur = (id: string, value: string) => {
-    if (value.length === 10 && !isValidDate(value)) {
-      handlePagamentoChange(id, "vencimento", "");
-    }
-  };
-
   const visiblePagamentos = useMemo(() => {
     const filtered =
       statusFilter === "todos"
@@ -100,10 +194,51 @@ export default function FinanceClient() {
       const bDate = parseDateToNumber(b.vencimento);
 
       if (aDate === null && bDate === null) return 0;
+      if (sortOrder === "vencimento-asc") {
+        if (aDate === null) return 1;
+        if (bDate === null) return -1;
+        return aDate - bDate;
+      }
+      if (sortOrder === "vencimento-desc") {
+        if (aDate === null) return 1;
+        if (bDate === null) return -1;
+        return bDate - aDate;
+      }
+
+      const aValue = a.valor ? toNumber(a.valor) : null;
+      const bValue = b.valor ? toNumber(b.valor) : null;
+
+      if (sortOrder === "valor-asc") {
+        if (aValue === null && bValue === null) return 0;
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        return aValue - bValue;
+      }
+
+      if (sortOrder === "valor-desc") {
+        if (aValue === null && bValue === null) return 0;
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        return bValue - aValue;
+      }
+
+      if (sortOrder === "status-abertos") {
+        if (a.pago !== b.pago) {
+          return Number(a.pago) - Number(b.pago);
+        }
+      }
+
+      if (sortOrder === "status-pagos") {
+        if (a.pago !== b.pago) {
+          return Number(b.pago) - Number(a.pago);
+        }
+      }
+
+      if (aDate === null && bDate === null) return 0;
       if (aDate === null) return 1;
       if (bDate === null) return -1;
 
-      return sortOrder === "vencimento-asc" ? aDate - bDate : bDate - aDate;
+      return aDate - bDate;
     });
   }, [pagamentos, sortOrder, statusFilter]);
 
@@ -126,30 +261,28 @@ export default function FinanceClient() {
     if (!file) return;
     const text = await file.text();
     try {
-      const parsed = JSON.parse(text) as Partial<{
-        valorFixo: string;
-        destinado: string;
-        pagamentos: Payment[];
-        statusFilter: "todos" | "abertos" | "pagos";
-        sortOrder: "vencimento-asc" | "vencimento-desc" | "nenhum";
-      }>;
+      const parsed = JSON.parse(text);
+      const normalized = normalizeState(parsed);
 
-      setValorFixo(parsed.valorFixo ?? "");
-      setDestinado(parsed.destinado ?? "");
-      setStatusFilter(parsed.statusFilter ?? "todos");
-      setSortOrder(parsed.sortOrder ?? "vencimento-asc");
-      if (Array.isArray(parsed.pagamentos)) {
-        const normalized = parsed.pagamentos.map((item) => ({
-          id: item.id ?? createPayment().id,
-          descricao: item.descricao ?? "",
-          valor: item.valor ?? "",
-          vencimento: item.vencimento ?? "",
-          pago: Boolean(item.pago),
-        }));
-        setPagamentos(normalized);
+      if (!normalized) {
+        setImportError("Arquivo inválido.");
+        return;
+      }
+
+      setImportError(null);
+      setValorFixo(normalized.valorFixo);
+      setDestinado(normalized.destinado);
+      setStatusFilter(normalized.statusFilter ?? "todos");
+      setSortOrder(normalized.sortOrder ?? "vencimento-asc");
+      if (Array.isArray(normalized.pagamentos)) {
+        setPagamentos(normalized.pagamentos);
       }
     } catch {
-      // ignore malformed import
+      setImportError("Arquivo inválido.");
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -157,28 +290,17 @@ export default function FinanceClient() {
     try {
       const stored = localStorage.getItem(storageKey);
       if (!stored) return;
-      const parsed = JSON.parse(stored) as Partial<{
-        valorFixo: string;
-        destinado: string;
-        pagamentos: Payment[];
-        statusFilter: "todos" | "abertos" | "pagos";
-        sortOrder: "vencimento-asc" | "vencimento-desc" | "nenhum";
-      }>;
-      if (parsed.valorFixo !== undefined) setValorFixo(parsed.valorFixo);
-      if (parsed.destinado !== undefined) setDestinado(parsed.destinado);
-      if (Array.isArray(parsed.pagamentos)) {
-        setPagamentos(
-          parsed.pagamentos.map((item) => ({
-            id: item.id ?? createPayment().id,
-            descricao: item.descricao ?? "",
-            valor: item.valor ?? "",
-            vencimento: item.vencimento ?? "",
-            pago: Boolean(item.pago),
-          }))
-        );
+      const parsed = JSON.parse(stored);
+      const normalized = normalizeState(parsed);
+      if (!normalized) return;
+
+      setValorFixo(normalized.valorFixo);
+      setDestinado(normalized.destinado);
+      if (Array.isArray(normalized.pagamentos)) {
+        setPagamentos(normalized.pagamentos);
       }
-      if (parsed.statusFilter) setStatusFilter(parsed.statusFilter);
-      if (parsed.sortOrder) setSortOrder(parsed.sortOrder);
+      if (normalized.statusFilter) setStatusFilter(normalized.statusFilter);
+      if (normalized.sortOrder) setSortOrder(normalized.sortOrder);
     } catch {
       // ignore storage parse errors
     }
@@ -192,30 +314,48 @@ export default function FinanceClient() {
       statusFilter,
       sortOrder,
     });
-    localStorage.setItem(storageKey, payload);
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      localStorage.setItem(storageKey, payload);
+    }, 400);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [valorFixo, destinado, pagamentos, statusFilter, sortOrder]);
 
   return (
     <main className="finance-screen">
       <section className="finance-card finance-card--top">
         <div className="finance-field">
-          <span className="finance-label">Valor Fixo</span>
+          <label className="finance-label" htmlFor={valorFixoId}>
+            Valor Fixo
+          </label>
           <input
             className="finance-input finance-input--control"
             inputMode="decimal"
             placeholder="R$ 00,00"
             value={valorFixo}
-            onChange={(event) => setValorFixo(sanitizeMoney(event.target.value))}
+            id={valorFixoId}
+            onChange={(event) => setValorFixo(formatCurrencyInput(event.target.value))}
           />
         </div>
         <div className="finance-field">
-          <span className="finance-label">Destinado ao Cofrinho</span>
+          <label className="finance-label" htmlFor={destinadoId}>
+            Destinado ao Cofrinho
+          </label>
           <input
             className="finance-input finance-input--control"
             inputMode="decimal"
             placeholder="R$ 00,00"
             value={destinado}
-            onChange={(event) => setDestinado(sanitizeMoney(event.target.value))}
+            id={destinadoId}
+            onChange={(event) => setDestinado(formatCurrencyInput(event.target.value))}
           />
         </div>
         {/*<div className="finance-add">
@@ -229,11 +369,27 @@ export default function FinanceClient() {
 
       <section className="finance-layout">
         <div className="finance-card finance-card--payments">
+          {importError && (
+            <div className="finance-banner finance-banner--error" role="alert" aria-live="polite">
+              <span id={importErrorId}>{importError}</span>
+              <button
+                className="finance-banner-close"
+                type="button"
+                aria-label="Fechar alerta"
+                onClick={() => setImportError(null)}
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div className="finance-controls">
             <div className="finance-control">
-              <span className="finance-control-label">Filtro</span>
+              <label className="finance-control-label" htmlFor={statusFilterId}>
+                Filtro
+              </label>
               <select
                 className="finance-select"
+                id={statusFilterId}
                 value={statusFilter}
                 onChange={(event) =>
                   setStatusFilter(event.target.value as "todos" | "abertos" | "pagos")
@@ -245,18 +401,23 @@ export default function FinanceClient() {
               </select>
             </div>
             <div className="finance-control">
-              <span className="finance-control-label">Ordenar</span>
+              <label className="finance-control-label" htmlFor={sortOrderId}>
+                Ordenar
+              </label>
               <select
                 className="finance-select"
                 value={sortOrder}
+                id={sortOrderId}
                 onChange={(event) =>
-                  setSortOrder(
-                    event.target.value as "vencimento-asc" | "vencimento-desc" | "nenhum"
-                  )
+                  setSortOrder(event.target.value as SortOrder)
                 }
               >
                 <option value="vencimento-asc">Vencimento ↑</option>
                 <option value="vencimento-desc">Vencimento ↓</option>
+                <option value="valor-asc">Valor ↑</option>
+                <option value="valor-desc">Valor ↓</option>
+                <option value="status-abertos">Status (Abertos)</option>
+                <option value="status-pagos">Status (Pagos)</option>
                 <option value="nenhum">Sem ordem</option>
               </select>
             </div>
@@ -293,38 +454,74 @@ export default function FinanceClient() {
           </div>
           {visiblePagamentos.map((pagamento) => (
             <div className="finance-row" key={pagamento.id}>
+              <label className="sr-only" htmlFor={`descricao-${pagamento.id}`}>
+                Descrição do pagamento
+              </label>
               <input
                 className="finance-input finance-input--wide finance-input--control"
                 placeholder="descrição"
                 value={pagamento.descricao}
+                id={`descricao-${pagamento.id}`}
                 onChange={(event) =>
                   handlePagamentoChange(pagamento.id, "descricao", event.target.value)
                 }
               />
+              <label className="sr-only" htmlFor={`valor-${pagamento.id}`}>
+                Valor do pagamento
+              </label>
               <input
                 className="finance-input finance-input--medium finance-input--control"
                 inputMode="decimal"
                 placeholder="R$ 00,00"
                 value={pagamento.valor}
+                id={`valor-${pagamento.id}`}
                 onChange={(event) =>
                   handlePagamentoChange(pagamento.id, "valor", event.target.value)
                 }
               />
-              <input
-                className={`finance-input finance-input--medium finance-input--control ${
-                  pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
-                    ? "finance-input--invalid"
-                    : ""
-                }`}
-                inputMode="numeric"
-                placeholder="dd/mm/aaaa"
-                pattern="\\d{2}/\\d{2}/\\d{4}"
-                value={pagamento.vencimento}
-                onChange={(event) =>
-                  handlePagamentoChange(pagamento.id, "vencimento", event.target.value)
-                }
-                onBlur={(event) => handleDateBlur(pagamento.id, event.target.value)}
-              />
+              <div className="finance-date-field">
+                <label className="sr-only" htmlFor={`vencimento-${pagamento.id}`}>
+                  Vencimento
+                </label>
+                <input
+                  className={`finance-input finance-input--medium finance-input--control ${
+                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                      ? "finance-input--invalid"
+                      : ""
+                  }`}
+                  inputMode="numeric"
+                  placeholder="dd/mm/aaaa"
+                  pattern="\\d{2}/\\d{2}/\\d{4}"
+                  value={pagamento.vencimento}
+                  id={`vencimento-${pagamento.id}`}
+                  aria-invalid={
+                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                  }
+                  aria-describedby={
+                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                      ? `vencimento-hint-${pagamento.id}`
+                      : undefined
+                  }
+                  title={
+                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                      ? "Data inválida"
+                      : undefined
+                  }
+                  onChange={(event) =>
+                    handlePagamentoChange(pagamento.id, "vencimento", event.target.value)
+                  }
+                />
+                {pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento) && (
+                  <span
+                    className="finance-date-hint"
+                    id={`vencimento-hint-${pagamento.id}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    Data inválida
+                  </span>
+                )}
+              </div>
               <button
                 className={`finance-paid-button ${
                   pagamento.pago ? "finance-paid-button--active" : ""
