@@ -8,6 +8,7 @@ export type Payment = {
 
 export type FinanceState = {
   valorFixo: string;
+  rendaExtra?: string;
   destinado: string;
   pagamentos: Payment[];
 };
@@ -89,20 +90,21 @@ export const calculateTotals = (state: FinanceState) => {
     0
   );
   const totalCofrinho = state.pagamentos.reduce((acc, item) => {
-    if (item.descricao.toLowerCase().includes("cofrinho")) {
+    if (item.pago && item.descricao.toLowerCase().includes("cofrinho")) {
       return acc + toNumber(item.valor);
     }
     return acc;
   }, 0);
 
   const valorFixoNum = toNumber(state.valorFixo);
+  const rendaExtraNum = toNumber(state.rendaExtra ?? "0");
   const destinadoNum = toNumber(state.destinado);
 
   return {
     totalPagos,
     totalAbertos,
     totalCofrinho,
-    valorUtilizavel: Math.max(valorFixoNum - totalPagos, 0),
+    valorUtilizavel: Math.max(valorFixoNum + rendaExtraNum - totalPagos, 0),
     restanteCofrinho: Math.max(destinadoNum + totalCofrinho, 0),
   };
 };

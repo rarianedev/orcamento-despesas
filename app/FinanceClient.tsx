@@ -38,11 +38,13 @@ export default function FinanceClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const valorFixoId = useId();
+  const rendaExtraId = useId();
   const destinadoId = useId();
   const statusFilterId = useId();
   const sortOrderId = useId();
   const importErrorId = useId();
   const [valorFixo, setValorFixo] = useState("");
+  const [rendaExtra, setRendaExtra] = useState("");
   const [destinado, setDestinado] = useState("");
   const [pagamentos, setPagamentos] = useState<Payment[]>([
     { id: "p-1", descricao: "", valor: "", vencimento: "", pago: false },
@@ -78,8 +80,8 @@ export default function FinanceClient() {
     });
 
   const totals = useMemo(
-    () => calculateTotals({ valorFixo, destinado, pagamentos }),
-    [valorFixo, destinado, pagamentos]
+    () => calculateTotals({ valorFixo, rendaExtra, destinado, pagamentos }),
+    [valorFixo, rendaExtra, destinado, pagamentos]
   );
 
   const filterOptions = useMemo(
@@ -163,6 +165,7 @@ export default function FinanceClient() {
 
     const nextValorFixo = normalizeMoneyValue(record.valorFixo);
     const nextDestinado = normalizeMoneyValue(record.destinado);
+    const nextRendaExtra = normalizeMoneyValue(record.rendaExtra);
 
     if (
       typeof record.statusFilter === "string" &&
@@ -199,6 +202,7 @@ export default function FinanceClient() {
 
     return {
       valorFixo: nextValorFixo,
+      rendaExtra: nextRendaExtra,
       destinado: nextDestinado,
       pagamentos: nextPagamentos,
       statusFilter:
@@ -301,7 +305,7 @@ export default function FinanceClient() {
 
   const handleExport = () => {
     const payload = JSON.stringify(
-      { valorFixo, destinado, pagamentos, statusFilter, sortOrder },
+      { valorFixo, rendaExtra, destinado, pagamentos, statusFilter, sortOrder },
       null,
       2
     );
@@ -328,6 +332,7 @@ export default function FinanceClient() {
 
       setImportError(null);
       setValorFixo(normalized.valorFixo);
+      setRendaExtra(normalized.rendaExtra ?? "");
       setDestinado(normalized.destinado);
       setStatusFilter(normalized.statusFilter ?? "todos");
       setSortOrder(normalized.sortOrder ?? "vencimento-asc");
@@ -352,6 +357,7 @@ export default function FinanceClient() {
       if (!normalized) return;
 
       setValorFixo(normalized.valorFixo);
+      setRendaExtra(normalized.rendaExtra ?? "");
       setDestinado(normalized.destinado);
       if (Array.isArray(normalized.pagamentos)) {
         setPagamentos(normalized.pagamentos);
@@ -366,6 +372,7 @@ export default function FinanceClient() {
   useEffect(() => {
     const payload = JSON.stringify({
       valorFixo,
+      rendaExtra,
       destinado,
       pagamentos,
       statusFilter,
@@ -384,13 +391,13 @@ export default function FinanceClient() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [valorFixo, destinado, pagamentos, statusFilter, sortOrder]);
+  }, [valorFixo, rendaExtra, destinado, pagamentos, statusFilter, sortOrder]);
 
   return (
     <main className="finance-screen">
       <FinanceHeader />
       <div className="finance-content">
-        <section className="finance-cards">
+        <section className="finance-cards finance-cards--three">
           <div className="finance-card finance-card--hero">
             <div className="finance-card-head">
               <div className="finance-card-icon">
@@ -413,6 +420,26 @@ export default function FinanceClient() {
 
           <div className="finance-card finance-card--hero">
             <div className="finance-card-head">
+              <div className="finance-card-icon finance-card-icon--accent">
+                <TrendingUp size={18} aria-hidden="true" />
+              </div>
+              <label className="finance-card-title" htmlFor={rendaExtraId}>
+                Renda Extra
+              </label>
+            </div>
+            <input
+              className="finance-card-input"
+              inputMode="decimal"
+              placeholder="R$ 0,00"
+              value={rendaExtra}
+              id={rendaExtraId}
+              onChange={(event) => setRendaExtra(formatCurrencyInput(event.target.value))}
+            />
+            <span className="finance-card-helper">Entradas adicionais</span>
+          </div>
+
+          <div className="finance-card finance-card--hero">
+            <div className="finance-card-head">
               <div className="finance-card-icon">
                 <PiggyBank size={18} aria-hidden="true" />
               </div>
@@ -428,7 +455,7 @@ export default function FinanceClient() {
               id={destinadoId}
               onChange={(event) => setDestinado(formatCurrencyInput(event.target.value))}
             />
-            <span className="finance-card-helper">Meta de poupança</span>
+            <span className="finance-card-helper">Valor guardado no cofrinho</span>
           </div>
         </section>
 

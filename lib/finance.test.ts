@@ -42,18 +42,20 @@ describe("finance utils", () => {
   it("calculateTotals respects paid and cofrinho logic", () => {
     const totals = calculateTotals({
       valorFixo: "1000",
+      rendaExtra: "200",
       destinado: "200",
       pagamentos: [
         { id: "1", descricao: "Conta", valor: "100", vencimento: "", pago: true },
         { id: "2", descricao: "Cofrinho extra", valor: "50", vencimento: "", pago: false },
         { id: "3", descricao: "Mercado", valor: "80", vencimento: "", pago: false },
+        { id: "4", descricao: "Cofrinho", valor: "40", vencimento: "", pago: true },
       ],
     });
 
     expect(totals.totalPagos).toBe(100);
     expect(totals.totalAbertos).toBe(130);
-    expect(totals.totalCofrinho).toBe(50);
-    expect(totals.valorUtilizavel).toBe(900);
-    expect(totals.restanteCofrinho).toBe(250);
+    expect(totals.totalCofrinho).toBe(40);
+    expect(totals.valorUtilizavel).toBe(1100);
+    expect(totals.restanteCofrinho).toBe(240);
   });
 });
