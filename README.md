@@ -102,8 +102,29 @@ Para evitar salvar a cada tecla:
 
 ---
 
+## Import JSON
+```bash
+{
+  "valorFixo": "R$ 5.000,00",
+  "rendaExtra": "R$ 300,00",
+  "destinado": "R$ 200,00",
+  "pagamentos": [
+    {
+      "id": "p-123",
+      "descricao": "Aluguel",
+      "valor": "R$ 1.200,00",
+      "vencimento": "10/02/2026",
+      "pago": true
+    }
+  ],
+  "statusFilter": "todos",
+  "sortOrder": "vencimento-asc"
+}
+```
 ## 🚀 Como rodar localmente
 
 ```bash
 npm install
 npm run dev
+
+
