@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Meu Orçamento — Next.js (Controle Financeiro Pessoal)
 
-## Getting Started
+Aplicação em **Next.js (App Router)** para controle de orçamento mensal: entradas (valor fixo + renda extra), pagamentos com filtro/ordenação, persistência com debounce e **import/export JSON**. UI moderna com **Lucide Icons** e foco em **acessibilidade**.
 
-First, run the development server:
+---
+
+## 🎯 O que este projeto demonstra
+
+- **React + TypeScript** com tipagem e modelagem clara (`Payment`, `SortOrder`)
+- **Separação de domínio** em `lib/finance` (cálculos, sanitização, parsing)
+- **UX de formulários**: máscara/formatador de moeda (`formatCurrencyInput`), sanitização de texto/data, feedback de erro
+- **Persistência eficiente**: `localStorage` com **debounce (400ms)** para reduzir writes
+- **Import/Export robusto**: normalização e validação de JSON + mensagem de erro
+- **Acessibilidade**: `useId`, labels (`sr-only`), `aria-invalid`, `aria-live`, `role="alert"`
+- UI com componentes e ícones (Lucide) e um header dedicado (`FinanceHeader`)
+
+---
+
+## ✨ Funcionalidades
+
+### Entradas (Renda)
+- **Valor Fixo Mensal**
+- **Renda Extra**
+- **Destinado ao Cofrinho**
+
+> Valores são formatados no padrão BRL no input via `formatCurrencyInput`.
+
+### Pagamentos
+- Adicionar e remover itens
+- Campos por item:
+  - **Descrição**
+  - **Valor**
+  - **Vencimento** (`dd/mm/aaaa`) com validação
+  - **Status** (Aberto/Pago)
+
+### Filtro e Ordenação (dropdown custom)
+- **Filtro:** Todos / Pagos / Abertos
+- **Ordenação:**
+  - Vencimento ↑ / Vencimento ↓
+  - Valor ↑ / Valor ↓
+  - Status (Abertos primeiro) / Status (Pagos primeiro)
+  - Sem ordem
+
+Dropdown fecha ao clicar fora (`mousedown` + refs `filterRef/sortRef`).
+
+### Resumo (sidebar)
+- **Valor Utilizável**
+- **Restante ao Cofrinho**
+- **Previsão (Pagamentos Abertos)**
+
+### Persistência e portabilidade
+- Estado salvo no `localStorage` (`finance-state-v1`) com debounce
+- **Exportar**: baixa `financeiro.json`
+- **Importar**: valida e normaliza conteúdo; exibe banner de erro em caso inválido
+
+---
+
+## 🧠 Regras e arquitetura
+
+### `lib/finance` (domínio)
+Responsável por:
+- `calculateTotals({ valorFixo, rendaExtra, destinado, pagamentos })`
+- `formatCurrencyInput`, `toNumber`
+- `sanitizeText`, `sanitizeDate`
+- `isValidDate`, `parseDateToNumber`
+- `type Payment`
+
+Isso mantém o componente focado em UI/estado.
+
+### Import/Normalização de JSON
+No `handleImport`, o arquivo é:
+1. Parseado (`JSON.parse`)
+2. Normalizado (`normalizeState`)
+   - moeda aceita `string` ou `number`
+   - datas/textos sanitizados
+   - valida `statusFilter` e `sortOrder`
+   - valida `pagamentos` como array
+   - garante `id` e `pago` boolean
+3. Aplica estado + limpa input file
+4. Mostra erro em banner se inválido
+
+### Validação de vencimento
+- Mostra “Data inválida” quando:
+  - `vencimento.length === 10` **e** `!isValidDate(vencimento)`
+- Acessível com `aria-invalid`, `aria-describedby` e hint com `aria-live`
+
+### Persistência com debounce
+Para evitar salvar a cada tecla:
+- um `setTimeout(400ms)` é reiniciado a cada mudança
+- no cleanup, o timeout é cancelado
+
+---
+
+## 🛠️ Tecnologias
+
+- Next.js (App Router)
+- React Hooks (`useState`, `useEffect`, `useMemo`, `useRef`, `useId`)
+- TypeScript
+- lucide-react (ícones)
+- localStorage
+- Import/Export JSON (Blob + input file)
+
+---
+
+## 🚀 Como rodar localmente
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
