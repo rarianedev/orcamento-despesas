@@ -1,60 +1,30 @@
-import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import styles from "./index.module.css";
-import React from "react";
-import Image from "next/image";
+         
+type AppHeaderProps = {
+  title?: string;
+  subtitle?: string;
+};
 
-export default function Header() {
+export default function FinanceHeader({
+  title = "Meu Orçamento",
+  subtitle = "Controle financeiro pessoal",
+}: AppHeaderProps) {
   return (
     <header className={styles.header}>
-      <div className={styles.container}>
-
-        {/* Logo */}
-        <div className={styles.logo}>
-          <span className={styles.logoDotGroup}>
-            <span></span><span></span><span></span>
-            <span></span><span></span>
-          </span>
-          <span className={styles.logoText}>
-            <strong>brix</strong>
-          </span>
+      <div className={styles.inner}>
+        <div className={styles.badge} aria-hidden="true">
+          {/* Ícone (sparkle) em SVG */}
+           <Sparkles className={styles.icon} />
         </div>
 
-        {/* Search Bar */}
-        <div className={styles.searchBox}>
-          <Image
-            src="/icones/Search.svg"
-            alt="Search Icon"
-            width={16}
-            height={16}
-            className={styles.searchIconLeft}
-          />
-          <input
-            className={styles.searchInput}
-            placeholder="Pesquisar por..."
-            type="text"
-          />
+        <div className={styles.text}>
+          <h1 className={styles.title}>{title}</h1>
+          <p className={styles.subtitle}>{subtitle}</p>
         </div>
-
-        {/* Navigation Menu */}
-        <nav className={styles.nav}>
-          <a href="#">Página Inicial</a>
-          <a href="#">Sobre</a>
-
-          <div className={styles.dropdown}>
-            <button className={styles.dropButton}>
-              Recursos <span className={styles.chevron}>▾</span>
-            </button>
-
-            <div className={styles.dropdownContent}>
-              <a href="#">Documentação</a>
-              <a href="#">Guias</a>
-              <a href="#">Tutoriais</a>
-            </div>
-          </div>
-
-          <a href="#">Contato</a>
-        </nav>
       </div>
+
+      <div className={styles.divider} />
     </header>
   );
 }

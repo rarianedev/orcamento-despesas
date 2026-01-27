@@ -2,6 +2,19 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  ArrowUpDown,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  Download,
+  Filter,
+  PiggyBank,
+  TrendingUp,
+  Upload,
+  Wallet,
+} from "lucide-react";
+import FinanceHeader from "../components/header";
+import {
   calculateTotals,
   formatCurrencyInput,
   isValidDate,
@@ -39,6 +52,10 @@ export default function FinanceClient() {
   const [statusFilter, setStatusFilter] = useState<"todos" | "abertos" | "pagos">("todos");
   const [sortOrder, setSortOrder] = useState<SortOrder>("vencimento-asc");
   const [importError, setImportError] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement | null>(null);
+  const sortRef = useRef<HTMLDivElement | null>(null);
 
   const storageKey = "finance-state-v1";
 
@@ -64,6 +81,46 @@ export default function FinanceClient() {
     () => calculateTotals({ valorFixo, destinado, pagamentos }),
     [valorFixo, destinado, pagamentos]
   );
+
+  const filterOptions = useMemo(
+    () => [
+      { value: "todos", label: "Todos" },
+      { value: "pagos", label: "Pagos" },
+      { value: "abertos", label: "Abertos" },
+    ],
+    []
+  );
+
+  const sortOptions = useMemo(
+    () => [
+      { value: "vencimento-asc", label: "Vencimento" },
+      { value: "vencimento-desc", label: "Vencimento ↓" },
+      { value: "valor-asc", label: "Valor ↑" },
+      { value: "valor-desc", label: "Valor ↓" },
+      { value: "status-abertos", label: "Status (Abertos)" },
+      { value: "status-pagos", label: "Status (Pagos)" },
+      { value: "nenhum", label: "Sem ordem" },
+    ],
+    []
+  );
+
+  const getLabel = (value: string, options: { value: string; label: string }[]) =>
+    options.find((option) => option.value === value)?.label ?? "";
+
+  useEffect(() => {
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (filterRef.current && !filterRef.current.contains(target)) {
+        setFilterOpen(false);
+      }
+      if (sortRef.current && !sortRef.current.contains(target)) {
+        setSortOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
 
   const normalizeMoneyValue = (value: unknown) => {
     if (typeof value === "number") {
@@ -331,186 +388,239 @@ export default function FinanceClient() {
 
   return (
     <main className="finance-screen">
-      <section className="finance-card finance-card--top">
-        <div className="finance-field">
-          <label className="finance-label" htmlFor={valorFixoId}>
-            Valor Fixo
-          </label>
-          <input
-            className="finance-input finance-input--control"
-            inputMode="decimal"
-            placeholder="R$ 00,00"
-            value={valorFixo}
-            id={valorFixoId}
-            onChange={(event) => setValorFixo(formatCurrencyInput(event.target.value))}
-          />
-        </div>
-        <div className="finance-field">
-          <label className="finance-label" htmlFor={destinadoId}>
-            Destinado ao Cofrinho
-          </label>
-          <input
-            className="finance-input finance-input--control"
-            inputMode="decimal"
-            placeholder="R$ 00,00"
-            value={destinado}
-            id={destinadoId}
-            onChange={(event) => setDestinado(formatCurrencyInput(event.target.value))}
-          />
-        </div>
-        {/*<div className="finance-add">
-          <span className="finance-divider" />
-          <button className="finance-add-button" type="button" aria-label="Adicionar">
-            +
-          </button>
-          <span className="finance-divider" />
-        </div>*/}
-      </section>
+      <FinanceHeader />
+      <div className="finance-content">
+        <section className="finance-cards">
+          <div className="finance-card finance-card--hero">
+            <div className="finance-card-head">
+              <div className="finance-card-icon">
+                <Wallet size={18} aria-hidden="true" />
+              </div>
+              <label className="finance-card-title" htmlFor={valorFixoId}>
+                Valor Fixo Mensal
+              </label>
+            </div>
+            <input
+              className="finance-card-input"
+              inputMode="decimal"
+              placeholder="R$ 0,00"
+              value={valorFixo}
+              id={valorFixoId}
+              onChange={(event) => setValorFixo(formatCurrencyInput(event.target.value))}
+            />
+            <span className="finance-card-helper">Sua renda mensal</span>
+          </div>
 
-      <section className="finance-layout">
-        <div className="finance-card finance-card--payments">
-          {importError && (
-            <div className="finance-banner finance-banner--error" role="alert" aria-live="polite">
-              <span id={importErrorId}>{importError}</span>
-              <button
-                className="finance-banner-close"
-                type="button"
-                aria-label="Fechar alerta"
-                onClick={() => setImportError(null)}
-              >
-                ×
-              </button>
-            </div>
-          )}
-          <div className="finance-controls">
-            <div className="finance-control">
-              <label className="finance-control-label" htmlFor={statusFilterId}>
-                Filtro
+          <div className="finance-card finance-card--hero">
+            <div className="finance-card-head">
+              <div className="finance-card-icon">
+                <PiggyBank size={18} aria-hidden="true" />
+              </div>
+              <label className="finance-card-title" htmlFor={destinadoId}>
+                Destinado ao Cofrinho
               </label>
-              <select
-                className="finance-select"
-                id={statusFilterId}
-                value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as "todos" | "abertos" | "pagos")
-                }
-              >
-                <option value="todos">Todos</option>
-                <option value="abertos">Abertos</option>
-                <option value="pagos">Pagos</option>
-              </select>
             </div>
-            <div className="finance-control">
-              <label className="finance-control-label" htmlFor={sortOrderId}>
-                Ordenar
-              </label>
-              <select
-                className="finance-select"
-                value={sortOrder}
-                id={sortOrderId}
-                onChange={(event) =>
-                  setSortOrder(event.target.value as SortOrder)
-                }
-              >
-                <option value="vencimento-asc">Vencimento ↑</option>
-                <option value="vencimento-desc">Vencimento ↓</option>
-                <option value="valor-asc">Valor ↑</option>
-                <option value="valor-desc">Valor ↓</option>
-                <option value="status-abertos">Status (Abertos)</option>
-                <option value="status-pagos">Status (Pagos)</option>
-                <option value="nenhum">Sem ordem</option>
-              </select>
-            </div>
+            <input
+              className="finance-card-input"
+              inputMode="decimal"
+              placeholder="R$ 0,00"
+              value={destinado}
+              id={destinadoId}
+              onChange={(event) => setDestinado(formatCurrencyInput(event.target.value))}
+            />
+            <span className="finance-card-helper">Meta de poupança</span>
+          </div>
+        </section>
+
+        <section className="finance-layout">
+          <div className="finance-card finance-card--payments">
+            {importError && (
+              <div className="finance-banner finance-banner--error" role="alert" aria-live="polite">
+                <span id={importErrorId}>{importError}</span>
+                <button
+                  className="finance-banner-close"
+                  type="button"
+                  aria-label="Fechar alerta"
+                  onClick={() => setImportError(null)}
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <div className="finance-controls">
+              <div className="finance-control">
+                <Filter size={16} aria-hidden="true" />
+                <div className="finance-dropdown" ref={filterRef}>
+                  <button
+                    className="finance-dropdown-trigger"
+                    type="button"
+                    id={statusFilterId}
+                    aria-haspopup="listbox"
+                    aria-expanded={filterOpen}
+                    onClick={() => setFilterOpen((prev) => !prev)}
+                  >
+                    {getLabel(statusFilter, filterOptions)}
+                  </button>
+                  {filterOpen && (
+                    <div className="finance-dropdown-menu" role="listbox">
+                      {filterOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={statusFilter === option.value}
+                          className={`finance-dropdown-item ${
+                            statusFilter === option.value ? "finance-dropdown-item--active" : ""
+                          }`}
+                          onClick={() => {
+                            setStatusFilter(option.value as "todos" | "abertos" | "pagos");
+                            setFilterOpen(false);
+                          }}
+                        >
+                          {statusFilter === option.value && (
+                            <Check size={14} className="finance-dropdown-check" aria-hidden="true" />
+                          )}
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="finance-control">
+                <ArrowUpDown size={16} aria-hidden="true" />
+                <div className="finance-dropdown" ref={sortRef}>
+                  <button
+                    className="finance-dropdown-trigger"
+                    type="button"
+                    id={sortOrderId}
+                    aria-haspopup="listbox"
+                    aria-expanded={sortOpen}
+                    onClick={() => setSortOpen((prev) => !prev)}
+                  >
+                    {getLabel(sortOrder, sortOptions)}
+                  </button>
+                  {sortOpen && (
+                    <div className="finance-dropdown-menu" role="listbox">
+                      {sortOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={sortOrder === option.value}
+                          className={`finance-dropdown-item ${
+                            sortOrder === option.value ? "finance-dropdown-item--active" : ""
+                          }`}
+                          onClick={() => {
+                            setSortOrder(option.value as SortOrder);
+                            setSortOpen(false);
+                          }}
+                        >
+                          {sortOrder === option.value && (
+                            <Check size={14} className="finance-dropdown-check" aria-hidden="true" />
+                          )}
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             <div className="finance-control-actions">
               <button
                 className="finance-secondary-button"
                 type="button"
                 onClick={handleExport}
               >
-                Exportar JSON
+                <Download size={16} aria-hidden="true" />
+                Exportar
               </button>
               <button
                 className="finance-secondary-button"
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
               >
-                Importar JSON
+                <Upload size={16} aria-hidden="true" />
+                Importar
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json"
-                onChange={(event) => handleImport(event.target.files?.[0])}
-                className="finance-file-input"
-              />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json"
+                  onChange={(event) => handleImport(event.target.files?.[0])}
+                  className="finance-file-input"
+                />
+              </div>
             </div>
-          </div>
           <div className="finance-table-head">
-            <span>Pagamentos</span>
+            <span>Pagamento</span>
             <span>Valor</span>
             <span>Vencimento</span>
-            <span>Pago</span>
-            <span className="finance-table-action" aria-hidden="true" />
+            <span>Status</span>
+            <span>Ações</span>
           </div>
           {visiblePagamentos.map((pagamento) => (
             <div className="finance-row" key={pagamento.id}>
-              <label className="sr-only" htmlFor={`descricao-${pagamento.id}`}>
-                Descrição do pagamento
-              </label>
-              <input
-                className="finance-input finance-input--wide finance-input--control"
-                placeholder="descrição"
-                value={pagamento.descricao}
-                id={`descricao-${pagamento.id}`}
-                onChange={(event) =>
-                  handlePagamentoChange(pagamento.id, "descricao", event.target.value)
-                }
-              />
-              <label className="sr-only" htmlFor={`valor-${pagamento.id}`}>
-                Valor do pagamento
-              </label>
-              <input
-                className="finance-input finance-input--medium finance-input--control"
-                inputMode="decimal"
-                placeholder="R$ 00,00"
-                value={pagamento.valor}
-                id={`valor-${pagamento.id}`}
-                onChange={(event) =>
-                  handlePagamentoChange(pagamento.id, "valor", event.target.value)
-                }
-              />
-              <div className="finance-date-field">
-                <label className="sr-only" htmlFor={`vencimento-${pagamento.id}`}>
-                  Vencimento
+                <label className="sr-only" htmlFor={`descricao-${pagamento.id}`}>
+                  Descrição do pagamento
                 </label>
                 <input
-                  className={`finance-input finance-input--medium finance-input--control ${
-                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
-                      ? "finance-input--invalid"
-                      : ""
-                  }`}
-                  inputMode="numeric"
-                  placeholder="dd/mm/aaaa"
-                  pattern="\\d{2}/\\d{2}/\\d{4}"
-                  value={pagamento.vencimento}
-                  id={`vencimento-${pagamento.id}`}
-                  aria-invalid={
-                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
-                  }
-                  aria-describedby={
-                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
-                      ? `vencimento-hint-${pagamento.id}`
-                      : undefined
-                  }
-                  title={
-                    pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
-                      ? "Data inválida"
-                      : undefined
-                  }
+                  className="finance-input finance-input--wide finance-input--control"
+                  placeholder="descrição"
+                  value={pagamento.descricao}
+                  id={`descricao-${pagamento.id}`}
                   onChange={(event) =>
-                    handlePagamentoChange(pagamento.id, "vencimento", event.target.value)
+                    handlePagamentoChange(pagamento.id, "descricao", event.target.value)
                   }
                 />
+                <label className="sr-only" htmlFor={`valor-${pagamento.id}`}>
+                  Valor do pagamento
+                </label>
+                <input
+                  className="finance-input finance-input--medium finance-input--control"
+                  inputMode="decimal"
+                  placeholder="R$ 00,00"
+                  value={pagamento.valor}
+                  id={`valor-${pagamento.id}`}
+                  onChange={(event) =>
+                    handlePagamentoChange(pagamento.id, "valor", event.target.value)
+                  }
+                />
+                <div className="finance-date-field">
+                  <label className="sr-only" htmlFor={`vencimento-${pagamento.id}`}>
+                    Vencimento
+                  </label>
+                  <div className="finance-date-input">
+                    <CalendarDays size={16} aria-hidden="true" />
+                    <input
+                      className={`finance-input finance-input--medium finance-input--control ${
+                        pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                          ? "finance-input--invalid"
+                          : ""
+                      }`}
+                      inputMode="numeric"
+                      placeholder="dd/mm/aaaa"
+                      pattern="\\d{2}/\\d{2}/\\d{4}"
+                      value={pagamento.vencimento}
+                      id={`vencimento-${pagamento.id}`}
+                      aria-invalid={
+                        pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                      }
+                      aria-describedby={
+                        pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                          ? `vencimento-hint-${pagamento.id}`
+                          : undefined
+                      }
+                      title={
+                        pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento)
+                          ? "Data inválida"
+                          : undefined
+                      }
+                      onChange={(event) =>
+                        handlePagamentoChange(pagamento.id, "vencimento", event.target.value)
+                      }
+                    />
+                  </div>
                 {pagamento.vencimento.length === 10 && !isValidDate(pagamento.vencimento) && (
                   <span
                     className="finance-date-hint"
@@ -521,7 +631,7 @@ export default function FinanceClient() {
                     Data inválida
                   </span>
                 )}
-              </div>
+                </div>
               <button
                 className={`finance-paid-button ${
                   pagamento.pago ? "finance-paid-button--active" : ""
@@ -530,6 +640,7 @@ export default function FinanceClient() {
                 aria-pressed={pagamento.pago}
                 onClick={() => handlePagamentoChange(pagamento.id, "pago", !pagamento.pago)}
               >
+                <CheckCircle2 size={14} aria-hidden="true" />
                 {pagamento.pago ? "Pago" : "Aberto"}
               </button>
               <button
@@ -538,45 +649,58 @@ export default function FinanceClient() {
                 aria-label="Remover pagamento"
                 onClick={() => removePagamento(pagamento.id)}
               >
-                −
+                –
               </button>
             </div>
           ))}
           <div className="finance-footer">
-            <span className="finance-underline" />
             <button
-              className="finance-add-button"
+              className="finance-add-button finance-add-button--full"
               type="button"
               aria-label="Adicionar pagamento"
               onClick={addPagamento}
             >
-              +
+              + Adicionar pagamento
             </button>
-            <span className="finance-underline" />
           </div>
-        </div>
+          </div>
 
         <aside className="finance-side">
+          <span className="finance-side-title">Resumo</span>
           <div className="finance-card finance-card--summary">
-            <span className="finance-label">Valor Utilizável</span>
-            <div className="finance-input finance-input--summary">
-              {formatBRL(totals.valorUtilizavel)}
+            <div className="finance-summary-head">
+              <span className="finance-summary-icon">
+                <Wallet size={16} aria-hidden="true" />
+              </span>
+              <span className="finance-summary-label">Valor Utilizável</span>
+            </div>
+            <div className="finance-summary-value">{formatBRL(totals.valorUtilizavel)}</div>
+            <div className="finance-summary-bar">
+              <span />
             </div>
           </div>
           <div className="finance-card finance-card--summary">
-            <span className="finance-label">Restanto ao Cofrinho</span>
-            <div className="finance-input finance-input--summary">
-              {formatBRL(totals.restanteCofrinho)}
+            <div className="finance-summary-head">
+              <span className="finance-summary-icon finance-summary-icon--piggy">
+                <PiggyBank size={16} aria-hidden="true" />
+              </span>
+              <span className="finance-summary-label">Restante ao Cofrinho</span>
             </div>
+            <div className="finance-summary-value">{formatBRL(totals.restanteCofrinho)}</div>
+            <span className="finance-summary-note">Meta atingida! 🎉</span>
           </div>
           <div className="finance-card finance-card--summary">
-            <span className="finance-label">Previsão (Pagamentos Abertos)</span>
-            <div className="finance-input finance-input--summary">
-              {formatBRL(totals.totalAbertos)}
+            <div className="finance-summary-head">
+              <span className="finance-summary-icon finance-summary-icon--warn">
+                <TrendingUp size={16} aria-hidden="true" />
+              </span>
+              <span className="finance-summary-label">Previsão (Pagamentos Abertos)</span>
             </div>
+            <div className="finance-summary-value">{formatBRL(totals.totalAbertos)}</div>
           </div>
         </aside>
       </section>
+      </div>
     </main>
   );
 }
