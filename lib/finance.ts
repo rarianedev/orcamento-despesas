@@ -4,12 +4,37 @@ export type Payment = {
   valor: string;
   vencimento: string;
   pago: boolean;
+  recorrente?: boolean;
+};
+
+export type MonthKey = `${number}-${string}`;
+
+export type CofrinhoConfig = {
+  enabled: boolean;
+  value: string;
+  goal?: string;
+};
+
+export type FinanceMonth = {
+  competence: MonthKey;
+  valorFixo: string;
+  rendaExtra: string;
+  cofrinho: CofrinhoConfig | null;
+  payments: Payment[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FinanceStore = {
+  version: number;
+  selectedMonth: MonthKey;
+  months: Record<MonthKey, FinanceMonth>;
 };
 
 export type FinanceState = {
   valorFixo: string;
   rendaExtra?: string;
-  destinado: string;
+  cofrinho?: CofrinhoConfig | null;
   pagamentos: Payment[];
 };
 
@@ -98,7 +123,8 @@ export const calculateTotals = (state: FinanceState) => {
 
   const valorFixoNum = toNumber(state.valorFixo);
   const rendaExtraNum = toNumber(state.rendaExtra ?? "0");
-  const destinadoNum = toNumber(state.destinado);
+  const destinadoNum =
+    state.cofrinho && state.cofrinho.enabled ? toNumber(state.cofrinho.value) : 0;
 
   return {
     totalPagos,

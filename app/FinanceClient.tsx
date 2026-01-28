@@ -22,6 +22,10 @@ import {
   sanitizeDate,
   sanitizeText,
   toNumber,
+  type CofrinhoConfig,
+  type FinanceMonth,
+  type FinanceStore,
+  type MonthKey,
   type Payment,
 } from "../lib/finance";
 
@@ -43,14 +47,9 @@ export default function FinanceClient() {
   const statusFilterId = useId();
   const sortOrderId = useId();
   const importErrorId = useId();
-  const [valorFixo, setValorFixo] = useState("");
-  const [rendaExtra, setRendaExtra] = useState("");
-  const [destinado, setDestinado] = useState("");
-  const [pagamentos, setPagamentos] = useState<Payment[]>([
-    { id: "p-1", descricao: "", valor: "", vencimento: "", pago: false },
-    { id: "p-2", descricao: "", valor: "", vencimento: "", pago: false },
-    { id: "p-3", descricao: "", valor: "", vencimento: "", pago: false },
-  ]);
+  const storageKey = "finance-state-v1";
+  const storeVersion = 2;
+  const [store, setStore] = useState<FinanceStore>(() => createEmptyStore());
   const [statusFilter, setStatusFilter] = useState<"todos" | "abertos" | "pagos">("todos");
   const [sortOrder, setSortOrder] = useState<SortOrder>("vencimento-asc");
   const [importError, setImportError] = useState<string | null>(null);
@@ -59,18 +58,109 @@ export default function FinanceClient() {
   const filterRef = useRef<HTMLDivElement | null>(null);
   const sortRef = useRef<HTMLDivElement | null>(null);
 
-  const storageKey = "finance-state-v1";
+  function createPayment(): Payment {
+    return {
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `p-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      descricao: "",
+      valor: "",
+      vencimento: "",
+      pago: false,
+    };
+  }
 
-  const createPayment = (): Payment => ({
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `p-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    descricao: "",
-    valor: "",
-    vencimento: "",
-    pago: false,
-  });
+  function nowISO() {
+    return new Date().toISOString();
+  }
+
+  function getCurrentMonthKey(): MonthKey {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    return `${now.getFullYear()}-${month}` as MonthKey;
+  }
+
+  function parseMonthKey(key: MonthKey) {
+    const [yearStr, monthStr] = key.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month) return null;
+    return { year, month };
+  }
+
+  const monthLabels = [
+    "Jan",
+    "Fev",
+    "Mar",
+    "Abr",
+    "Mai",
+    "Jun",
+    "Jul",
+    "Ago",
+    "Set",
+    "Out",
+    "Nov",
+    "Dez",
+  ];
+
+  function formatMonthLabel(key: MonthKey) {
+    const parsed = parseMonthKey(key);
+    if (!parsed) return key;
+    return `${monthLabels[parsed.month - 1]}/${parsed.year}`;
+  }
+
+  function getNextMonthKey(key: MonthKey): MonthKey {
+    const parsed = parseMonthKey(key);
+    if (!parsed) return getCurrentMonthKey();
+    const nextMonth = parsed.month === 12 ? 1 : parsed.month + 1;
+    const nextYear = parsed.month === 12 ? parsed.year + 1 : parsed.year;
+    return `${nextYear}-${String(nextMonth).padStart(2, "0")}` as MonthKey;
+  }
+
+  function createEmptyMonth(key: MonthKey): FinanceMonth {
+    const now = nowISO();
+    return {
+      competence: key,
+      valorFixo: "",
+      rendaExtra: "",
+      cofrinho: null,
+      payments: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  function createMonthFromPrevious(key: MonthKey, previous: FinanceMonth): FinanceMonth {
+    const now = nowISO();
+    const recurringPayments = previous.payments
+      .filter((payment) => payment.recorrente)
+      .map((payment) => ({
+        ...payment,
+        id: createPayment().id,
+      }));
+
+    return {
+      competence: key,
+      valorFixo: previous.valorFixo,
+      rendaExtra: formatCurrencyInput("0"),
+      cofrinho: previous.cofrinho ? { ...previous.cofrinho } : null,
+      payments: recurringPayments,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  function createEmptyStore(): FinanceStore {
+    const key = getCurrentMonthKey();
+    return {
+      version: storeVersion,
+      selectedMonth: key,
+      months: {
+        [key]: createEmptyMonth(key),
+      },
+    };
+  }
 
   const formatBRL = (value: number) =>
     value.toLocaleString("pt-BR", {
@@ -79,9 +169,26 @@ export default function FinanceClient() {
       minimumFractionDigits: 2,
     });
 
+  const selectedMonth = store.selectedMonth;
+  const selectedMonthData = useMemo(
+    () => store.months[selectedMonth] ?? createEmptyMonth(selectedMonth),
+    [store.months, selectedMonth]
+  );
+
+  const valorFixo = selectedMonthData.valorFixo;
+  const rendaExtra = selectedMonthData.rendaExtra;
+  const destinado = selectedMonthData.cofrinho?.value ?? "";
+  const pagamentos = selectedMonthData.payments;
+
   const totals = useMemo(
-    () => calculateTotals({ valorFixo, rendaExtra, destinado, pagamentos }),
-    [valorFixo, rendaExtra, destinado, pagamentos]
+    () =>
+      calculateTotals({
+        valorFixo,
+        rendaExtra,
+        cofrinho: selectedMonthData.cofrinho,
+        pagamentos,
+      }),
+    [pagamentos, rendaExtra, selectedMonthData.cofrinho, valorFixo]
   );
 
   const filterOptions = useMemo(
@@ -150,10 +257,91 @@ export default function FinanceClient() {
       valor: normalizeMoneyValue(record.valor),
       vencimento: normalizeDateValue(record.vencimento),
       pago: Boolean(record.pago),
+      recorrente: Boolean(record.recorrente),
     };
   };
 
-  const normalizeState = (value: unknown) => {
+  const normalizeCofrinho = (value: unknown): CofrinhoConfig | null => {
+    if (!value || typeof value !== "object") return null;
+    const record = value as Partial<CofrinhoConfig>;
+    const enabled = Boolean(record.enabled);
+    const normalizedValue = normalizeMoneyValue(record.value);
+    const normalizedGoal =
+      record.goal !== undefined ? normalizeMoneyValue(record.goal) : undefined;
+
+    if (!enabled && !normalizedValue && !normalizedGoal) return null;
+
+    return {
+      enabled,
+      value: normalizedValue,
+      ...(normalizedGoal ? { goal: normalizedGoal } : {}),
+    };
+  };
+
+  const isMonthKey = (value: unknown): value is MonthKey =>
+    typeof value === "string" && /^\d{4}-\d{2}$/.test(value);
+
+  const normalizeMonth = (key: MonthKey, value: unknown): FinanceMonth | null => {
+    if (!value || typeof value !== "object") return null;
+    const record = value as Partial<
+      FinanceMonth & {
+        pagamentos?: unknown;
+        destinado?: unknown;
+      }
+    >;
+
+    const paymentsValue = Array.isArray(record.payments)
+      ? record.payments
+      : Array.isArray(record.pagamentos)
+      ? record.pagamentos
+      : [];
+
+    const normalizedPayments = Array.isArray(paymentsValue)
+      ? paymentsValue
+          .map((item) => normalizePayment(item))
+          .filter((item): item is Payment => Boolean(item))
+      : [];
+
+    const normalizedCofrinho =
+      record.cofrinho !== undefined
+        ? normalizeCofrinho(record.cofrinho)
+        : record.destinado !== undefined
+        ? {
+            enabled: true,
+            value: normalizeMoneyValue(record.destinado),
+          }
+        : null;
+
+    const now = nowISO();
+    return {
+      competence: isMonthKey(record.competence) ? record.competence : key,
+      valorFixo: normalizeMoneyValue(record.valorFixo),
+      rendaExtra: normalizeMoneyValue(record.rendaExtra),
+      cofrinho: normalizedCofrinho,
+      payments: normalizedPayments,
+      createdAt: typeof record.createdAt === "string" ? record.createdAt : now,
+      updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : now,
+    };
+  };
+
+  const isValidStatusFilter = (
+    value: unknown
+  ): value is "todos" | "abertos" | "pagos" =>
+    typeof value === "string" && ["todos", "abertos", "pagos"].includes(value);
+
+  const isValidSortOrder = (value: unknown): value is SortOrder =>
+    typeof value === "string" &&
+    [
+      "vencimento-asc",
+      "vencimento-desc",
+      "valor-asc",
+      "valor-desc",
+      "status-abertos",
+      "status-pagos",
+      "nenhum",
+    ].includes(value);
+
+  const normalizeLegacyState = (value: unknown) => {
     if (!value || typeof value !== "object") return null;
     const record = value as Partial<{
       valorFixo: unknown;
@@ -161,31 +349,18 @@ export default function FinanceClient() {
       pagamentos: unknown;
       statusFilter: unknown;
       sortOrder: unknown;
+      rendaExtra: unknown;
     }>;
 
     const nextValorFixo = normalizeMoneyValue(record.valorFixo);
     const nextDestinado = normalizeMoneyValue(record.destinado);
     const nextRendaExtra = normalizeMoneyValue(record.rendaExtra);
 
-    if (
-      typeof record.statusFilter === "string" &&
-      !["todos", "abertos", "pagos"].includes(record.statusFilter)
-    ) {
+    if (record.statusFilter !== undefined && !isValidStatusFilter(record.statusFilter)) {
       return null;
     }
 
-    if (
-      typeof record.sortOrder === "string" &&
-      ![
-        "vencimento-asc",
-        "vencimento-desc",
-        "valor-asc",
-        "valor-desc",
-        "status-abertos",
-        "status-pagos",
-        "nenhum",
-      ].includes(record.sortOrder)
-    ) {
+    if (record.sortOrder !== undefined && !isValidSortOrder(record.sortOrder)) {
       return null;
     }
 
@@ -206,11 +381,111 @@ export default function FinanceClient() {
       destinado: nextDestinado,
       pagamentos: nextPagamentos,
       statusFilter:
-        typeof record.statusFilter === "string"
-          ? (record.statusFilter as "todos" | "abertos" | "pagos")
+        typeof record.statusFilter === "string" && isValidStatusFilter(record.statusFilter)
+          ? record.statusFilter
           : null,
-      sortOrder: typeof record.sortOrder === "string" ? (record.sortOrder as SortOrder) : null,
+      sortOrder:
+        typeof record.sortOrder === "string" && isValidSortOrder(record.sortOrder)
+          ? record.sortOrder
+          : null,
     };
+  };
+
+  const normalizeStore = (value: unknown) => {
+    if (!value || typeof value !== "object") return null;
+    const record = value as Partial<
+      FinanceStore & {
+        statusFilter?: unknown;
+        sortOrder?: unknown;
+      }
+    >;
+
+    if (record.months && typeof record.months === "object") {
+      const monthsRecord = record.months as Record<string, unknown>;
+      const months: Record<MonthKey, FinanceMonth> = {};
+
+      Object.entries(monthsRecord).forEach(([key, monthValue]) => {
+        if (!isMonthKey(key)) return;
+        const normalizedMonth = normalizeMonth(key as MonthKey, monthValue);
+        if (normalizedMonth) {
+          months[key as MonthKey] = normalizedMonth;
+        }
+      });
+
+      const keys = Object.keys(months).sort() as MonthKey[];
+      const fallbackKey = getCurrentMonthKey();
+      const selected = isMonthKey(record.selectedMonth)
+        ? (record.selectedMonth as MonthKey)
+        : keys.length
+        ? keys[keys.length - 1]
+        : fallbackKey;
+
+      if (!months[selected]) {
+        months[selected] = createEmptyMonth(selected);
+      }
+
+      return {
+        store: {
+          version: storeVersion,
+          selectedMonth: selected,
+          months,
+        },
+        statusFilter:
+          typeof record.statusFilter === "string" && isValidStatusFilter(record.statusFilter)
+            ? record.statusFilter
+            : null,
+        sortOrder:
+          typeof record.sortOrder === "string" && isValidSortOrder(record.sortOrder)
+            ? record.sortOrder
+            : null,
+      };
+    }
+
+    const legacy = normalizeLegacyState(value);
+    if (!legacy) return null;
+
+    const key = getCurrentMonthKey();
+    const month = createEmptyMonth(key);
+    const cofrinho =
+      legacy.destinado || legacy.destinado === ""
+        ? ({ enabled: true, value: legacy.destinado } as CofrinhoConfig)
+        : null;
+
+    return {
+      store: {
+        version: storeVersion,
+        selectedMonth: key,
+        months: {
+          [key]: {
+            ...month,
+            valorFixo: legacy.valorFixo,
+            rendaExtra: legacy.rendaExtra ?? "",
+            cofrinho,
+            payments: legacy.pagamentos ?? [],
+          },
+        },
+      },
+      statusFilter: legacy.statusFilter,
+      sortOrder: legacy.sortOrder,
+    };
+  };
+
+  const updateSelectedMonth = (updater: (month: FinanceMonth) => FinanceMonth) => {
+    setStore((prev) => {
+      const selected = prev.selectedMonth;
+      const base = prev.months[selected] ?? createEmptyMonth(selected);
+      const nextMonth = updater(base);
+      return {
+        ...prev,
+        months: {
+          ...prev.months,
+          [selected]: {
+            ...nextMonth,
+            updatedAt: nowISO(),
+          },
+        },
+      };
+    });
   };
 
   const handlePagamentoChange = (
@@ -227,17 +502,26 @@ export default function FinanceClient() {
         ? sanitizeDate(value as string)
         : value;
 
-    setPagamentos((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, [field]: nextValue } : item))
-    );
+    updateSelectedMonth((month) => ({
+      ...month,
+      payments: month.payments.map((item) =>
+        item.id === id ? { ...item, [field]: nextValue } : item
+      ),
+    }));
   };
 
   const addPagamento = () => {
-    setPagamentos((prev) => [...prev, createPayment()]);
+    updateSelectedMonth((month) => ({
+      ...month,
+      payments: [...month.payments, createPayment()],
+    }));
   };
 
   const removePagamento = (id: string) => {
-    setPagamentos((prev) => prev.filter((item) => item.id !== id));
+    updateSelectedMonth((month) => ({
+      ...month,
+      payments: month.payments.filter((item) => item.id !== id),
+    }));
   };
 
   const visiblePagamentos = useMemo(() => {
@@ -303,9 +587,79 @@ export default function FinanceClient() {
     });
   }, [pagamentos, sortOrder, statusFilter]);
 
+  const monthKeys = useMemo(
+    () => (Object.keys(store.months).sort() as MonthKey[]),
+    [store.months]
+  );
+  const selectedMonthIndex = monthKeys.indexOf(selectedMonth);
+  const prevMonth = selectedMonthIndex > 0 ? monthKeys[selectedMonthIndex - 1] : null;
+  const nextMonth =
+    selectedMonthIndex >= 0 && selectedMonthIndex < monthKeys.length - 1
+      ? monthKeys[selectedMonthIndex + 1]
+      : null;
+
+  const handleSelectMonth = (key: MonthKey) => {
+    setStore((prev) => ({
+      ...prev,
+      selectedMonth: key,
+    }));
+  };
+
+  const handleAddMonth = () => {
+    setStore((prev) => {
+      const keys = (Object.keys(prev.months).sort() as MonthKey[]);
+      const latestKey = keys.length ? keys[keys.length - 1] : getCurrentMonthKey();
+      let nextKey = getNextMonthKey(latestKey);
+      while (prev.months[nextKey]) {
+        nextKey = getNextMonthKey(nextKey);
+      }
+      const baseMonth = prev.months[latestKey] ?? createEmptyMonth(latestKey);
+      const newMonth = createMonthFromPrevious(nextKey, baseMonth);
+      return {
+        ...prev,
+        selectedMonth: nextKey,
+        months: {
+          ...prev.months,
+          [nextKey]: newMonth,
+        },
+      };
+    });
+  };
+
+  const handleValorFixoChange = (value: string) => {
+    updateSelectedMonth((month) => ({
+      ...month,
+      valorFixo: formatCurrencyInput(value),
+    }));
+  };
+
+  const handleRendaExtraChange = (value: string) => {
+    updateSelectedMonth((month) => ({
+      ...month,
+      rendaExtra: formatCurrencyInput(value),
+    }));
+  };
+
+  const handleCofrinhoChange = (value: string) => {
+    const formatted = formatCurrencyInput(value);
+    updateSelectedMonth((month) => {
+      if (!formatted && !month.cofrinho?.goal) {
+        return { ...month, cofrinho: null };
+      }
+      return {
+        ...month,
+        cofrinho: {
+          enabled: true,
+          value: formatted,
+          goal: month.cofrinho?.goal,
+        },
+      };
+    });
+  };
+
   const handleExport = () => {
     const payload = JSON.stringify(
-      { valorFixo, rendaExtra, destinado, pagamentos, statusFilter, sortOrder },
+      { ...store, statusFilter, sortOrder },
       null,
       2
     );
@@ -323,7 +677,7 @@ export default function FinanceClient() {
     const text = await file.text();
     try {
       const parsed = JSON.parse(text);
-      const normalized = normalizeState(parsed);
+      const normalized = normalizeStore(parsed);
 
       if (!normalized) {
         setImportError("Arquivo inválido.");
@@ -331,14 +685,17 @@ export default function FinanceClient() {
       }
 
       setImportError(null);
-      setValorFixo(normalized.valorFixo);
-      setRendaExtra(normalized.rendaExtra ?? "");
-      setDestinado(normalized.destinado);
+      setStore((prev) => ({
+        ...prev,
+        version: storeVersion,
+        selectedMonth: normalized.store.selectedMonth,
+        months: {
+          ...prev.months,
+          ...normalized.store.months,
+        },
+      }));
       setStatusFilter(normalized.statusFilter ?? "todos");
       setSortOrder(normalized.sortOrder ?? "vencimento-asc");
-      if (Array.isArray(normalized.pagamentos)) {
-        setPagamentos(normalized.pagamentos);
-      }
     } catch {
       setImportError("Arquivo inválido.");
     } finally {
@@ -353,15 +710,10 @@ export default function FinanceClient() {
       const stored = localStorage.getItem(storageKey);
       if (!stored) return;
       const parsed = JSON.parse(stored);
-      const normalized = normalizeState(parsed);
+      const normalized = normalizeStore(parsed);
       if (!normalized) return;
 
-      setValorFixo(normalized.valorFixo);
-      setRendaExtra(normalized.rendaExtra ?? "");
-      setDestinado(normalized.destinado);
-      if (Array.isArray(normalized.pagamentos)) {
-        setPagamentos(normalized.pagamentos);
-      }
+      setStore(normalized.store);
       if (normalized.statusFilter) setStatusFilter(normalized.statusFilter);
       if (normalized.sortOrder) setSortOrder(normalized.sortOrder);
     } catch {
@@ -370,11 +722,19 @@ export default function FinanceClient() {
   }, []);
 
   useEffect(() => {
+    if (!store.months[store.selectedMonth]) {
+      setStore((prev) => ({
+        ...prev,
+        months: {
+          ...prev.months,
+          [prev.selectedMonth]: createEmptyMonth(prev.selectedMonth),
+        },
+      }));
+      return;
+    }
+
     const payload = JSON.stringify({
-      valorFixo,
-      rendaExtra,
-      destinado,
-      pagamentos,
+      ...store,
       statusFilter,
       sortOrder,
     });
@@ -391,12 +751,57 @@ export default function FinanceClient() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [valorFixo, rendaExtra, destinado, pagamentos, statusFilter, sortOrder]);
+  }, [statusFilter, sortOrder, store]);
 
   return (
     <main className="finance-screen">
       <FinanceHeader />
       <div className="finance-content">
+        <section className="finance-monthbar">
+          <div className="finance-monthbar-group">
+            <button
+              className="finance-month-nav"
+              type="button"
+              onClick={() => prevMonth && handleSelectMonth(prevMonth)}
+              disabled={!prevMonth}
+              aria-label="Mês anterior"
+            >
+              ←
+            </button>
+            <div className="finance-month-select">
+              <label className="sr-only" htmlFor="month-select">
+                Competência
+              </label>
+              <select
+                id="month-select"
+                className="finance-select"
+                value={selectedMonth}
+                onChange={(event) => handleSelectMonth(event.target.value as MonthKey)}
+              >
+                {monthKeys.map((key) => (
+                  <option key={key} value={key}>
+                    {formatMonthLabel(key)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              className="finance-month-nav"
+              type="button"
+              onClick={() => nextMonth && handleSelectMonth(nextMonth)}
+              disabled={!nextMonth}
+              aria-label="Próximo mês"
+            >
+              →
+            </button>
+          </div>
+          <span className="finance-monthbar-current">
+            Mês selecionado: {formatMonthLabel(selectedMonth)}
+          </span>
+          <button className="finance-primary-button" type="button" onClick={handleAddMonth}>
+            + Adicionar mês
+          </button>
+        </section>
         <section className="finance-cards finance-cards--three">
           <div className="finance-card finance-card--hero">
             <div className="finance-card-head">
@@ -413,7 +818,7 @@ export default function FinanceClient() {
               placeholder="R$ 0,00"
               value={valorFixo}
               id={valorFixoId}
-              onChange={(event) => setValorFixo(formatCurrencyInput(event.target.value))}
+              onChange={(event) => handleValorFixoChange(event.target.value)}
             />
             <span className="finance-card-helper">Sua renda mensal</span>
           </div>
@@ -433,7 +838,7 @@ export default function FinanceClient() {
               placeholder="R$ 0,00"
               value={rendaExtra}
               id={rendaExtraId}
-              onChange={(event) => setRendaExtra(formatCurrencyInput(event.target.value))}
+              onChange={(event) => handleRendaExtraChange(event.target.value)}
             />
             <span className="finance-card-helper">Entradas adicionais</span>
           </div>
@@ -453,7 +858,7 @@ export default function FinanceClient() {
               placeholder="R$ 0,00"
               value={destinado}
               id={destinadoId}
-              onChange={(event) => setDestinado(formatCurrencyInput(event.target.value))}
+              onChange={(event) => handleCofrinhoChange(event.target.value)}
             />
             <span className="finance-card-helper">Valor guardado no cofrinho</span>
           </div>

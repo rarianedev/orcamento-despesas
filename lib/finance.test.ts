@@ -43,7 +43,7 @@ describe("finance utils", () => {
     const totals = calculateTotals({
       valorFixo: "1000",
       rendaExtra: "200",
-      destinado: "200",
+      cofrinho: { enabled: true, value: "200" },
       pagamentos: [
         { id: "1", descricao: "Conta", valor: "100", vencimento: "", pago: true },
         { id: "2", descricao: "Cofrinho extra", valor: "50", vencimento: "", pago: false },
